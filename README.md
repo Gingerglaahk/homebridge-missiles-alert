@@ -1,26 +1,148 @@
-# homebridge-missiles-alert
+# Homebridge Missiles Alert
 
-This plugin is set as a motion sensor that turns on when there is an alarm "צבע אדום" in the configured city.
-With the sensor you could make automations to suit your needs
+Homebridge plugin for Israeli missile alerts ("צבע אדום" / Red Alert) with HomeKit integration.
 
-Let's hope we won't have to test this at all :)
+This plugin exposes a **HomeKit motion sensor** that turns on when an alert is detected for your configured city, so you can create automations such as turning on lights, sending notifications, or triggering other smart home devices.
 
+Let’s hope you never actually need it.
 
-### Installation
+---
 
-1. Install homebridge using: ```npm install -g homebridge```
-2. Install this plugin using: ```npm install -g homebridge-missiles-alert``` or sudo npm install -g git+https://github.com/gal-m/homebridge-missiles-alert.git
-3. Update your configuration file. See sample-config.json in this repository for a sample.
+## Features
 
-You can also install this straight from the homebridge web ui.
-In the plugins tab, search for redalert.
+- **HomeKit Motion Sensor** - Appears in HomeKit as a motion sensor
+- **City-based Filtering** - Triggers only for the city you configure
+- **Real-time Monitoring** - Checks for active alerts continuously
+- **HomeKit Automations** - Use alerts to trigger scenes and devices
+- **Simple Setup** - Lightweight accessory configuration
 
-### Configuration
+---
 
-See the sample-config.file to see an example of working accessory. Following, all available options are explained:
+## Installation
 
- * ```name``` Accessory name.
- * ```city``` The name of the city (exactly as it says in the pikud horef's site).
+### Via Homebridge UI
 
+1. Open the **Homebridge** web UI
+2. Go to the **Plugins** tab
+3. Search for `homebridge-missiles-alert`
+4. Click **Install**
+5. Configure the accessory in your `config.json`
 
-## Many thanks to https://www.tzevaadom.co.il that provide the api for the project
+### Via npm
+
+```bash
+npm install -g homebridge-missiles-alert
+```
+
+Or install directly from GitHub:
+
+```bash
+sudo npm install -g git+https://github.com/gal-m/homebridge-missiles-alert.git
+```
+
+---
+
+## Configuration
+
+Add the accessory to your Homebridge `config.json`:
+
+```json
+{
+  "accessories": [
+    {
+      "accessory": "MissilesAlert",
+      "name": "Missiles Alert",
+      "city": "תל אביב - יפו"
+    }
+  ]
+}
+```
+
+### Configuration Options
+
+| Option | Type | Required | Description |
+|--------|------|----------|-------------|
+| `accessory` | string | Yes | Must be `"MissilesAlert"` |
+| `name` | string | Yes | Name of the accessory as shown in HomeKit |
+| `city` | string | Yes | City name exactly as it appears on the Pikud HaOref / alert source site |
+
+### Important Notes
+
+- The `city` value must match the source city name **exactly**
+- City names are typically in **Hebrew**
+- If the configured city does not match exactly, alerts may not trigger
+
+---
+
+## Example Use Cases
+
+Once added to HomeKit, the motion sensor can be used in automations such as:
+
+- Turn on all lights when an alert is detected
+- Play a siren or spoken warning on a HomePod
+- Flash selected lights in the house
+- Trigger a safe-room preparation scene
+- Send Home notifications to family members
+
+---
+
+## How It Works
+
+The plugin monitors the alert feed and checks whether the configured city appears in an active missile alert.
+
+When a matching alert is detected:
+
+1. The HomeKit motion sensor turns **on**
+2. Any HomeKit automations linked to that sensor are triggered
+3. When the alert is no longer active, the sensor resets
+
+---
+
+## Troubleshooting
+
+### Motion sensor does not trigger
+
+- Make sure the `city` name is written exactly as expected
+- Check the Homebridge logs for plugin errors
+- Confirm the plugin is loaded successfully in Homebridge
+- Test with a city that frequently appears in alerts to verify configuration
+
+### Homebridge does not load the plugin
+
+- Make sure the plugin was installed globally
+- Restart Homebridge after installation
+- Verify the accessory name is exactly `"MissilesAlert"`
+
+---
+
+## Safety Notice
+
+This plugin is provided for convenience and home automation purposes only.
+
+It is **not** an official warning system and must **not** be relied upon as your primary source of safety alerts. Always follow official guidance and use official alert channels and devices provided by the relevant authorities.
+
+---
+
+## Legal Disclaimer
+
+This is an independent community project and is not affiliated with, endorsed by, or approved by any governmental authority, including the Israeli Ministry of Defense or the Home Front Command.
+
+The software is provided **"as is"** without warranty of any kind.
+
+---
+
+## Credits
+
+Many thanks to [tzevaadom.co.il](https://www.tzevaadom.co.il) for providing the API used by this project.
+
+---
+
+## Contributing
+
+Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
+
+---
+
+## License
+
+ISC
