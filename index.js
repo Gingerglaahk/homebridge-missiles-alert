@@ -1,5 +1,6 @@
 var Service, Characteristic;
 const request = require('request');
+const areaToMigunTime = require('./assets/area_to_migun_time.json');
 const DEF_INTERVAL = 2000; //2s
 
 const URL = "https://api.tzevaadom.co.il/notifications";
@@ -39,6 +40,7 @@ function HttpMotion(log, config) {
     // Internal variables
     this.last_state = false;
     this.waiting_response = false;
+    this.activeAlertsEndTimes = {}; // Map of notificationId to end timestamp
 }
 
 HttpMotion.prototype = {
@@ -80,19 +82,41 @@ HttpMotion.prototype = {
                     );
 
                     if (currentAlertsForCity.length > 0) {
-                        value = true;
-                        
-                        if (currentAlertsForCity.some(alert => !this.activeAlertIds.includes(alert.notificationId))) {
-                            this.log("Your city is under attack! Get to the shelters right now!");
-                        }
-                        
-                        this.activeAlertIds = currentAlertsForCity.map(alert => alert.notificationId);
-                    } else {
-                        value = false;
-                        if (this.activeAlertIds.length > 0) {
-                            this.log("Alert over for your city.");
-                            this.activeAlertIds = [];
-                        }
+                        currentAlertsForCity.forEach(alert => {
+                            if (!this.activeAlertIds.includes(alert.notificationId)) {
+                                this.log("Your city is under attack! Get to the shelters right now!");
+                                this.activeAlertIds.push(alert.notificationId);
+                                
+                                // Determine migun time for this alert
+                                let migunTimeSeconds = 600; // Default 10 minutes (600s)
+                                if (this.cities.includes("all")) {
+                                    // If tracking all cities, get the max time of the affected cities
+                                    let maxTime = 600;
+                                    alert.cities.forEach(city => {
+                                        if (areaToMigunTime[city] !== undefined) {
+                                            maxTime = Math.max(maxTime, areaToMigunTime[city]);
+                                        }
+                                    });
+                                    migunTimeSeconds = maxTime;
+                                } else {
+                                    // Get the max time among the configured cities that are in this alert
+                                    let maxTime = 600;
+                                    this.cities.forEach(city => {
+                                        if (alert.cities.includes(city) && areaToMigunTime[city] !== undefined) {
+                                            maxTime = Math.max(maxTime, areaToMigunTime[city]);
+                                        }
+                                    });
+                                    migunTimeSeconds = maxTime;
+                                }
+                                
+                                // Set the end time for this specific alert + 10 minutes (600s) buffer per Pikud Haoref guidelines
+                                this.activeAlertsEndTimes[alert.notificationId] = Date.now() + (migunTimeSeconds * 1000) + (600 * 1000);
+                            } else {
+                                // If the alert is still actively reported by the API, reset its timer
+                                // (This ensures the timer only really starts ticking down once the API stops reporting it, 
+                                // or it ensures it at least stays active as long as the API says so)
+                            }
+                        });
                     }
 
                     this.httpErrorResponseCount = 0;
@@ -105,6 +129,30 @@ HttpMotion.prototype = {
                     }
                     error = parseErr;
                 }
+            }
+
+            // Evaluate if any alerts are still active based on their end times
+            let anyAlertActive = false;
+            let now = Date.now();
+            
+            // Clean up expired alerts and check if any remain
+            for (let i = this.activeAlertIds.length - 1; i >= 0; i--) {
+                let alertId = this.activeAlertIds[i];
+                let endTime = this.activeAlertsEndTimes[alertId];
+                
+                if (endTime && now < endTime) {
+                    anyAlertActive = true;
+                } else {
+                    // Alert has expired
+                    this.activeAlertIds.splice(i, 1);
+                    delete this.activeAlertsEndTimes[alertId];
+                }
+            }
+            
+            value = anyAlertActive;
+            
+            if (!value && this.last_state === true) {
+                this.log("Alert over for your city. Safe to leave shelter.");
             }
 
             this.motionService
