@@ -18,7 +18,7 @@ module.exports = function (homebridge) {
 
 function HttpMotion(log, config) {
     this.log = log;
-    this.lastNotificationId = null;
+    this.activeAlertIds = [];
 
     // Error counters
     this.httpErrorResponseCount = 0;
@@ -75,16 +75,25 @@ HttpMotion.prototype = {
                 try {
                     var alerts = JSON.parse(body);
 
-                    alerts.forEach(alert => {
+                    var currentAlertsForCity = alerts.filter(alert => 
+                        this.cities.includes("all") || alert.cities.some(city => this.cities.includes(city))
+                    );
 
-                        // Check if the alert hasn't been processed before and contains the desired city
-                        if (this.lastNotificationId !== alert.notificationId && 
-                            (this.cities.includes("all") || alert.cities.some(city => this.cities.includes(city)))) { 
-                            value = true;
-                            this.lastNotificationId = alert.notificationId;
+                    if (currentAlertsForCity.length > 0) {
+                        value = true;
+                        
+                        if (currentAlertsForCity.some(alert => !this.activeAlertIds.includes(alert.notificationId))) {
                             this.log("Your city is under attack! Get to the shelters right now!");
                         }
-                    });
+                        
+                        this.activeAlertIds = currentAlertsForCity.map(alert => alert.notificationId);
+                    } else {
+                        value = false;
+                        if (this.activeAlertIds.length > 0) {
+                            this.log("Alert over for your city.");
+                            this.activeAlertIds = [];
+                        }
+                    }
 
                     this.httpErrorResponseCount = 0;
                     this.jsonParseErrorCount = 0;
