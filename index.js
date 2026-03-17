@@ -1,9 +1,9 @@
 var Service, Characteristic;
 const request = require('request');
-const areaToMigunTime = require('./assets/area_to_migun_time.json');
 const DEF_INTERVAL = 2000; //2s
 
 const URL = "https://api.tzevaadom.co.il/notifications";
+const OREF_URL = "https://www.oref.org.il/warningMessages/alert/Alerts.json";
 const HTTP_METHOD = "GET";
 const HEADERS = {
     "Connection": "close",
@@ -61,6 +61,16 @@ HttpMotion.prototype = {
             headers: this.headers
         };
 
+        var opsOref = {
+            uri: OREF_URL,
+            method: "GET",
+            headers: {
+                "Referer": "https://www.oref.org.il/",
+                "X-Requested-With": "XMLHttpRequest",
+                "Content-Type": "application/json"
+            }
+        };
+
         request(ops, (error, res, body) => {
             var value = false;
             var recentAlerts = [];
@@ -87,30 +97,9 @@ HttpMotion.prototype = {
                                 this.log("Your city is under attack! Get to the shelters right now!");
                                 this.activeAlertIds.push(alert.notificationId);
                                 
-                                // Determine migun time for this alert
-                                let migunTimeSeconds = 600; // Default 10 minutes (600s)
-                                if (this.cities.includes("all")) {
-                                    // If tracking all cities, get the max time of the affected cities
-                                    let maxTime = 600;
-                                    alert.cities.forEach(city => {
-                                        if (areaToMigunTime[city] !== undefined) {
-                                            maxTime = Math.max(maxTime, areaToMigunTime[city]);
-                                        }
-                                    });
-                                    migunTimeSeconds = maxTime;
-                                } else {
-                                    // Get the max time among the configured cities that are in this alert
-                                    let maxTime = 600;
-                                    this.cities.forEach(city => {
-                                        if (alert.cities.includes(city) && areaToMigunTime[city] !== undefined) {
-                                            maxTime = Math.max(maxTime, areaToMigunTime[city]);
-                                        }
-                                    });
-                                    migunTimeSeconds = maxTime;
-                                }
-                                
-                                // Set the end time for this specific alert + 10 minutes (600s) buffer per Pikud Haoref guidelines
-                                this.activeAlertsEndTimes[alert.notificationId] = Date.now() + (migunTimeSeconds * 1000) + (600 * 1000);
+                                // Set the default end time for this specific alert to 10 minutes (600s) buffer per Pikud Haoref guidelines
+                                // Oref's explicit 'Clear' messages (cat 13) will override this if received sooner.
+                                this.activeAlertsEndTimes[alert.notificationId] = Date.now() + (600 * 1000);
                             } else {
                                 // If the alert is still actively reported by the API, reset its timer
                                 // (This ensures the timer only really starts ticking down once the API stops reporting it, 
@@ -131,35 +120,75 @@ HttpMotion.prototype = {
                 }
             }
 
-            // Evaluate if any alerts are still active based on their end times
-            let anyAlertActive = false;
-            let now = Date.now();
-            
-            // Clean up expired alerts and check if any remain
-            for (let i = this.activeAlertIds.length - 1; i >= 0; i--) {
-                let alertId = this.activeAlertIds[i];
-                let endTime = this.activeAlertsEndTimes[alertId];
-                
-                if (endTime && now < endTime) {
-                    anyAlertActive = true;
-                } else {
-                    // Alert has expired
-                    this.activeAlertIds.splice(i, 1);
-                    delete this.activeAlertsEndTimes[alertId];
-                }
+            // Also check OREF for "END" messages if there are active alerts
+            if (this.activeAlertIds.length > 0) {
+                request(opsOref, (errOref, resOref, bodyOref) => {
+                    if (!errOref && bodyOref) {
+                        try {
+                            // Strip zero-width no-break space or bom if any
+                            let text = bodyOref.replace(/^\uFEFF/, '').trim();
+                            if (text) {
+                                let orefData = JSON.parse(text);
+                                // cat 13 is END message
+                                if (orefData && (orefData.cat === "13" || orefData.cat === 13)) {
+                                    let endCities = orefData.data || [];
+                                    let endForConfigured = false;
+                                    
+                                    if (this.cities.includes("all")) {
+                                        endForConfigured = true;
+                                    } else {
+                                        endForConfigured = endCities.some(c => this.cities.includes(c));
+                                    }
+                                    
+                                    if (endForConfigured) {
+                                        // End message received for our city, immediately clear active alerts
+                                        this.log("Received 'Safe to leave shelter' message from Oref.");
+                                        this.activeAlertIds = [];
+                                        this.activeAlertsEndTimes = {};
+                                    }
+                                }
+                            }
+                        } catch(e) {
+                            // Ignore oref parse errors, we can fallback to timeout
+                        }
+                    }
+                    this._finalizeUpdate();
+                });
+            } else {
+                this._finalizeUpdate();
             }
-            
-            value = anyAlertActive;
-            
-            if (!value && this.last_state === true) {
-                this.log("Alert over for your city. Safe to leave shelter.");
-            }
-
-            this.motionService
-                .getCharacteristic(Characteristic.MotionDetected).updateValue(value, null, "updateState");
-            this.last_state = value;
-            this.waiting_response = false;
         });
+    },
+
+    _finalizeUpdate: function() {
+        // Evaluate if any alerts are still active based on their end times
+        let anyAlertActive = false;
+        let now = Date.now();
+        
+        // Clean up expired alerts and check if any remain
+        for (let i = this.activeAlertIds.length - 1; i >= 0; i--) {
+            let alertId = this.activeAlertIds[i];
+            let endTime = this.activeAlertsEndTimes[alertId];
+            
+            if (endTime && now < endTime) {
+                anyAlertActive = true;
+            } else {
+                // Alert has expired
+                this.activeAlertIds.splice(i, 1);
+                delete this.activeAlertsEndTimes[alertId];
+            }
+        }
+        
+        var value = anyAlertActive;
+        
+        if (!value && this.last_state === true) {
+            this.log("Alert over for your city. Safe to leave shelter.");
+        }
+
+        this.motionService
+            .getCharacteristic(Characteristic.MotionDetected).updateValue(value, null, "updateState");
+        this.last_state = value;
+        this.waiting_response = false;
     },
 
     getState: function (callback) {

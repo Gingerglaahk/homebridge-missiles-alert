@@ -21,11 +21,11 @@
   },
   "dependencies": {
     "moment-timezone": "^0.5.43",
-    "request": "^2.0.0"
+    "request": "^2.0.0",
+    "ws": "^8.19.0"
   },
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "devDependencies": {}
+  }
 }
